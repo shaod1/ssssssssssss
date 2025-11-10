@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Happy Birthday, Puja!</title>
+  <style>
+    :root{
+      --bg1:#071129; --bg2:#0f172a; --soft-pink:#ff9fb1; --white:#ffffff;
+      --balloon-size:32px;
+    }
+    html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;overflow:hidden;background:var(--bg2);}
+    .wrap{height:100%;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at center,var(--bg2) 0%, var(--bg1) 100%);}
+    .wrap.animate{animation:bgPulse 8s ease-in-out infinite;}
+    @keyframes bgPulse{0%{filter:brightness(1) hue-rotate(0deg)}50%{filter:brightness(1.08) hue-rotate(12deg)}100%{filter:brightness(1) hue-rotate(0deg)}}
+    #stage{position:relative;width:100%;height:100%;}
+    #startBtn{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:400;padding:18px 28px;font-size:18px;border-radius:12px;border:none;background:linear-gradient(135deg,#ff6b8b,#ff9fb1);color:white;cursor:pointer;box-shadow:0 12px 40px rgba(0,0,0,.45);}
+    canvas{display:block;width:100%;height:100%;position:relative;z-index:10;}
+    .note{position:absolute;left:50%;top:62%;transform:translate(-50%,-50%);z-index:500;color:var(--white);font-size:22px;text-align:center;padding:16px 24px;border-radius:12px;background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);display:none;opacity:0;}
+    .note h1{margin:0 0 8px 0;font-size:36px;color:var(--soft-pink);font-weight:700;}
+    .note p{margin:0;font-size:18px;color:var(--white);opacity:0.95;}
+    .typewriter{display:inline-block;overflow:hidden;border-right:.12em solid rgba(255,255,255,0.75);white-space:nowrap;}
+
+    .heart-small{position:absolute;width:14px;height:14px;transform:translate(-50%,-50%) rotate(45deg);pointer-events:none;}
+    .heart-small:before, .heart-small:after{content:"";position:absolute;width:14px;height:14px;background:radial-gradient(circle at 30% 25%, rgba(255,160,175,0.98), rgba(255,90,120,0.95));border-radius:50%;}
+    .heart-small:before{top:-7px;left:0;}
+    .heart-small:after{left:7px;top:0;}
+
+    .balloon{position:absolute;width:var(--balloon-size);height:var(--balloon-size);border-radius:50% 50% 50% 50%;pointer-events:none;z-index:200;box-shadow:0 0 14px rgba(255,255,255,0.3);}
+    @media (prefers-reduced-motion: reduce){*{animation:none!important}}
+  </style>
+</head>
+<body>
+  <div class="wrap" id="wrap">
+    <div id="stage">
+      <button id="startBtn">Click to celebrate!</button>
+      <canvas id="c"></canvas>
+      <div class="note" id="note">
+        <h1 id="titleText"></h1>
+        <p id="subText"></p>
+      </div>
+      <audio id="bgAudio" loop preload="auto">
+        <source src="https://upload.wikimedia.org/wikipedia/commons/4/4f/Beethoven_Moonlight_sonata_1st_movement.ogg" type="audio/ogg">
+        <source src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_ca4d6f8b7c.mp3?filename=sad-piano-10037.mp3" type="audio/mpeg">
+      </audio>
+    </div>
+  </div>
+
+  <script>
+    const TITLE_TEXT = "Happy Birthday Puja!";
+    const SUB_TEXT = "May your life be filled with endless love and happiness 💞 Sorry for late "
+
+    const PARTICLE_COUNT = 900;
+    const HEART_SCALE = 2.0;
+    const ASSEMBLE_DURATION = 5000;
+    const SHOW_RED_MS = 2000;
+    const NOTE_VISIBLE_MS = 3200;
+    const NOTE_FADE_MS = 1800;
+    const LOOP_DELAY_MS = 800;
+
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const startBtn = document.getElementById('startBtn');
+    const note = document.getElementById('note');
+    const titleTextEl = document.getElementById('titleText');
+    const subTextEl = document.getElementById('subText');
+    const wrap = document.getElementById('wrap');
+    const audioEl = document.getElementById('bgAudio');
+
+    let DPR = window.devicePixelRatio || 1;
+    function resize(){
+      DPR = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(window.innerWidth * DPR);
+      canvas.height = Math.floor(window.innerHeight * DPR);
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+      ctx.setTransform(DPR,0,0,DPR,0,0);
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    function easeOutCubic(t){ return 1 - Math.pow(1 - t, 3); }
+
+    function heartXY(t){ const x = 16 * Math.pow(Math.sin(t), 3); const y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t); return {x,y}; }
+    function buildHeartPoints(cx, cy, scale, count){
+      const pts=[];
+      for(let i=0;i<count;i++){
+        const t=(i/count)*Math.PI*2;
+        const p=heartXY(t);
+        pts.push({x:cx + p.x*scale, y:cy - p.y*scale});
+      }
+      return pts;
+    }
+
+    class Particle{constructor(sx,sy,tx,ty,r){this.sx=sx;this.sy=sy;this.x=sx;this.y=sy;this.tx=tx;this.ty=ty;this.r=r;this.progress=0;} update(dt,duration){ if(this.progress<1) this.progress+=dt/duration; if(this.progress>1)this.progress=1; const e=easeOutCubic(this.progress); this.x=this.sx+(this.tx-this.sx)*e; this.y=this.sy+(this.ty-this.sy)*e;} draw(ctx,phase){ctx.beginPath(); const pulse=Math.sin(phase/280 + (this.x+this.y)/350)*1.1; ctx.arc(this.x,this.y,Math.max(1,this.r+pulse),0,Math.PI*2); const alpha=0.95; ctx.shadowBlur=34 + Math.abs(pulse)*8; ctx.shadowColor=`rgba(255,80,110,${alpha})`; ctx.fillStyle=`rgba(255,80,110,${alpha})`; ctx.fill(); ctx.shadowBlur=0;}}
+
+    class Spark{constructor(x,y,vx,vy,life,size,hue){this.x=x;this.y=y;this.vx=vx;this.vy=vy;this.life=life;this.max=life;this.size=size;this.hue=hue;} update(dt){this.life-=dt/16.6; this.x+=this.vx*dt/16.6; this.y+=this.vy*dt/16.6; this.vy+=0.03*dt/16.6;} draw(ctx){ if(this.life<=0)return; ctx.beginPath(); ctx.fillStyle=`hsla(${this.hue},80%,60%,${Math.max(0,this.life/this.max)})`; ctx.arc(this.x,this.y,this.size,0,Math.PI*2); ctx.fill(); }}
+
+    const bgOrbs=[];
+    function initBgOrbs(count=28){ bgOrbs.length=0; for(let i=0;i<count;i++){ const x=Math.random()*window.innerWidth; const y=Math.random()*window.innerHeight; const r=8+Math.random()*22; const vx=(Math.random()-0.5)*0.02; const vy=(Math.random()-0.5)*0.02; const hue=320 + Math.random()*40; bgOrbs.push({x,y,r,vx,vy,hue,phase:Math.random()*Math.PI*2}); }}
+    function updateBgOrbs(dt){ for(const o of bgOrbs){ o.x+=o.vx*dt/16.6; o.y+=o.vy*dt/16.6; o.phase+=dt/800; if(o.x<-100) o.x=window.innerWidth+100; if(o.x>window.innerWidth+100)o.x=-100; if(o.y<-100)o.y=window.innerHeight+100; if(o.y>window.innerHeight+100)o.y=-100; }}
+    function drawBgOrbs(ctx,t){ for(const o of bgOrbs){ const g=ctx.createRadialGradient(o.x*DPR,o.y*DPR,0,o.x*DPR,o.y*DPR,o.r*DPR*3); const mix=0.5+0.5*Math.sin(t/4000+o.phase); const hue=320+(mix*40); g.addColorStop(0,`rgba(${Math.floor(255)},${Math.floor(60+mix*80)},${Math.floor(110+mix*30)},${0.28*mix})`); g.addColorStop(0.4,`rgba(255,80,110,${0.12*mix})`); g.addColorStop(1,'rgba(0,0,0,0)'); ctx.fillStyle=g; ctx.fillRect((o.x-o.r*3)*DPR,(o.y-o.r*3)*DPR,o.r*6*DPR,o.r*6*DPR); }}
+
+    const floatingHearts=[];
+    function spawnFloatingHeart(){ const el=document.createElement('div'); el.className='heart-small'; document.body.appendChild(el); const startX=window.innerWidth*(0.35+Math.random()*0.3); const startY=window.innerHeight*(0.65+Math.random()*0.12); const speed=0.8+Math.random()*0.7; const drift=(Math.random()-0.5)*40; const life=4200+Math.random()*3600; const born=performance.now(); floatingHearts.push({el,startX,startY,speed,drift,life,born}); }
+    function updateFloatingHearts(now){ for(let i=floatingHearts.length-1;i>=0;i--){ const h=floatingHearts[i]; const t=(now-h.born)/h.life; if(t>=1){ h.el.remove(); floatingHearts.splice(i,1); continue;} const y=h.startY-(t*window.innerHeight*0.28)*h.speed; const x=h.startX+Math.sin(t*2+i)*40+h.drift*t; h.el.style.left=x+'px'; h.el.style.top=y+'px'; h.el.style.opacity=String(1-t); h.el.style.transform=`translate(-50%,-50%) rotate(${t*360}deg) scale(${0.85+t*0.5})`; }}
+
+    const floatingBalloons=[];
+    function spawnBalloon(){ 
+      const el=document.createElement('div'); el.className='balloon'; 
+      const colors=["#ff6b8b","#ff9fb1","#ff5a7a","#ff88a2"]; 
+      el.style.background=`linear-gradient(135deg,${colors[Math.floor(Math.random()*colors.length)]},${colors[Math.floor(Math.random()*colors.length)]})`;
+      document.body.appendChild(el);
+      const startX=window.innerWidth*(0.3+Math.random()*0.4);
+      const startY=window.innerHeight+100;
+      const speed=0.4+Math.random()*0.25; // faster float
+      const drift=(Math.random()-0.5)*30;
+      floatingBalloons.push({el,startX,startY,speed,drift});
+    }
+    function updateBalloons(){ for(let i=floatingBalloons.length-1;i>=0;i--){ const b=floatingBalloons[i]; b.el.style.left=(b.startX+b.drift)+'px'; b.el.style.top=(b.startY-=b.speed)+'px'; if(b.startY<-100){ b.el.remove(); floatingBalloons.splice(i,1); }}}
+
+    let particles=[], sparks=[], lastTs=0, animating=false, assembleStart=0, bgTime=0;
+
+    function createParticles(){ particles=[]; const cx=window.innerWidth/2; const cy=window.innerHeight/2+10; const scale=HEART_SCALE*(Math.min(window.innerWidth,window.innerHeight)/110); const sample=buildHeartPoints(cx,cy,scale,Math.max(PARTICLE_COUNT,1200)); for(let i=sample.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [sample[i],sample[j]]=[sample[j],sample[i]];} const targets=sample.slice(0,PARTICLE_COUNT); for(let i=0;i<PARTICLE_COUNT;i++){ const sx=Math.random()*window.innerWidth; const sy=Math.random()*window.innerHeight; const t=targets[i%targets.length]; const r=2.6+Math.random()*3; particles.push(new Particle(sx,sy,t.x+(Math.random()-0.5)*2,t.y+(Math.random()-0.5)*2,r)); }}
+
+    function spawnSparks(x,y,amount){ for(let i=0;i<amount;i++){ const ang=Math.random()*Math.PI*2; const speed=0.6+Math.random()*2.1; const vx=Math.cos(ang)*speed; const vy=Math.sin(ang)*speed-1.2; sparks.push(new Spark(x+(Math.random()-0.5)*30,y+(Math.random()-0.5)*30,vx,vy,60+Math.random()*60,1+Math.random()*2.2,320+Math.random()*50)); }}
+
+    function animate(ts){ if(!lastTs) lastTs=ts; const dt=ts-lastTs; lastTs=ts; bgTime+=dt; ctx.clearRect(0,0,canvas.width,canvas.height);
+      updateBgOrbs(dt); drawBgOrbs(ctx,bgTime);
+
+      const cx=window.innerWidth/2*DPR; const cy=(window.innerHeight/2+10)*DPR; const maxR=Math.min(window.innerWidth,window.innerHeight)*DPR*0.36; const grd=ctx.createRadialGradient(cx,cy,maxR*0.08,cx,cy,maxR);
+      const hueShift=320+20*Math.sin(bgTime/7000);
+      grd.addColorStop(0,`hsla(${hueShift},75%,65%,0.22)`); grd.addColorStop(0.45,`hsla(${hueShift},70%,55%,0.08)`); grd.addColorStop(1,'rgba(0,0,0,0)'); ctx.fillStyle=grd; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+      if(animating){ for(const p of particles) p.update(dt,ASSEMBLE_DURATION);}
+      for(const p of particles) p.draw(ctx,ts);
+      for(let i=sparks.length-1;i>=0;i--){ const s=sparks[i]; s.update(dt); if(s.life<=0) sparks.splice(i,1);}
+      for(const s of sparks) s.draw(ctx);
+
+      const elapsed=ts-assembleStart;
+      if(elapsed>ASSEMBLE_DURATION){ if(Math.random()<0.14) spawnSparks(window.innerWidth/2,window.innerHeight/2,3+Math.floor(Math.random()*4));}
+      updateFloatingHearts(ts); updateBalloons();
+
+      if(animating){ if(elapsed>ASSEMBLE_DURATION+SHOW_RED_MS){ animating=false; setTimeout(()=>{showNoteThenLoop();},300); } }
+
+      if(animating||sparks.length>0||floatingHearts.length>0||floatingBalloons.length>0) requestAnimationFrame(animate); else lastTs=0;
+    }
+
+    function showNoteThenLoop(){
+      titleTextEl.textContent=''; subTextEl.textContent='';
+      note.style.display='block'; note.style.opacity='1';
+      let i=0; const title=TITLE_TEXT; const tInt=setInterval(()=>{ i++; titleTextEl.textContent=title.slice(0,i); if(i>=title.length) clearInterval(tInt);},80);
+      setTimeout(()=>{ let j=0; const sub=SUB_TEXT; const sInt=setInterval(()=>{ j++; subTextEl.textContent=sub.slice(0,j); if(j>=sub.length) clearInterval(sInt);},40);},title.length*80+300);
+      const totalShow=Math.max(NOTE_VISIBLE_MS,title.length*80+SUB_TEXT.length*40+400);
+      setTimeout(()=>{ const start=performance.now(); function fade(){ const now=performance.now(); const t=Math.min(1,(now-start)/NOTE_FADE_MS); note.style.opacity=String(1-t); if(t<1) requestAnimationFrame(fade); else { note.style.display='none'; cleanupAndRestart();} } requestAnimationFrame(fade); },totalShow);
+    }
+
+    function cleanupAndRestart(){
+      for(const h of floatingHearts) h.el.remove();
+      for(const b of floatingBalloons) b.el.remove();
+      floatingHearts.length=0; floatingBalloons.length=0; sparks.length=0; particles.length=0; wrap.classList.remove('animate');
+      setTimeout(()=>{ startSequence();},LOOP_DELAY_MS);
+    }
+
+    function startSequence(){
+      try{ audioEl.play().catch(()=>{}); }catch(e){}
+      wrap.classList.add('animate');
+      const fhInterval=setInterval(()=>{ spawnFloatingHeart(); spawnBalloon(); if(!animating) clearInterval(fhInterval); },700);
+      createParticles(); spawnSparks(window.innerWidth/2,window.innerHeight/2,40);
+      animating=true; assembleStart=performance.now(); lastTs=0; requestAnimationFrame(animate);
+    }
+
+    startBtn.addEventListener('click',()=>{ try{ audioEl.currentTime=0; audioEl.play().catch(()=>{});}catch(e){} startBtn.style.display='none'; startSequence();});
+    note.addEventListener('click',()=>{ note.style.display='none'; note.style.opacity='0'; try{ audioEl.pause(); audioEl.currentTime=0; audioEl.play().catch(()=>{});}catch(e){} cleanupAndRestart(); });
+
+    titleTextEl.textContent=''; subTextEl.textContent=''; initBgOrbs(30);
+    window.addEventListener('load',()=>{ resize(); });
+  </script>
+</body>
+</html>
